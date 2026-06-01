@@ -72,6 +72,7 @@ def init_session_state():
         "user_email": "",
         "participants_df": None,
         "previous_season_df": None,
+        "player_stats": None,
         "season": "Autumn",
         "year": 2026,
         "team_assignments": {},  # {profile_id: team_name}
@@ -89,6 +90,19 @@ def init_session_state():
 
 
 init_session_state()
+
+# --- Auto-load saved state on startup ---
+if not st.session_state.get("_state_loaded"):
+    _saved = load_state()
+    if _saved:
+        import io as _io
+        for _key, _val in _saved.items():
+            if _val is not None:
+                # Restore DataFrames from serialised CSV
+                if isinstance(_val, dict) and _val.get("__dataframe__"):
+                    _val = pd.read_csv(_io.StringIO(_val["csv"]))
+                st.session_state[_key] = _val
+    st.session_state["_state_loaded"] = True
 
 
 # --- Authentication ---
@@ -218,7 +232,34 @@ def sidebar():
     if st.sidebar.button("📂 Load Progress"):
         load_saved_state()
         st.sidebar.success("Loaded!")
+        st.rerun()
 
+    # --- Backup Download/Upload ---
+    st.sidebar.divider()
+    st.sidebar.caption("💾 Backup")
+
+    # Download backup
+    if os.path.exists(SAVE_FILE):
+        with open(SAVE_FILE, "r") as _f:
+            st.sidebar.download_button(
+                "⬇️ Download Backup",
+                data=_f.read(),
+                file_name="team_builder_backup.json",
+                mime="application/json",
+            )
+
+    # Upload backup to restore
+    backup_file = st.sidebar.file_uploader("⬆️ Restore from backup", type=["json"], key="backup_upload")
+    if backup_file:
+        import io as _io
+        backup_data = backup_file.read().decode("utf-8")
+        with open(SAVE_FILE, "w") as _f:
+            _f.write(backup_data)
+        load_saved_state()
+        st.sidebar.success("✅ Backup restored!")
+        st.rerun()
+
+    st.sidebar.divider()
     if st.sidebar.button("Logout"):
         st.session_state.authenticated = False
         st.rerun()
@@ -228,6 +269,7 @@ def sidebar():
 
 # --- Save / Load ---
 def save_current_state():
+    """Save all application state including DataFrames to persistent storage."""
     state = {
         "team_assignments": st.session_state.team_assignments,
         "team_details": st.session_state.team_details,
@@ -238,15 +280,19 @@ def save_current_state():
         "season": st.session_state.season,
         "year": st.session_state.year,
         "birth_cert_sighted": st.session_state.birth_cert_sighted,
+        "participants_df": st.session_state.participants_df,
+        "player_stats": st.session_state.get("player_stats"),
+        "previous_teams": st.session_state.get("previous_teams", {}),
     }
     save_state(state)
 
 
 def load_saved_state():
+    """Load all saved state including DataFrames on startup."""
     state = load_state()
     if state:
         for key, val in state.items():
-            if key in st.session_state:
+            if val is not None:
                 st.session_state[key] = val
 
 
@@ -425,6 +471,7 @@ def page_upload():
         df = enrich_participants(df, st.session_state.season, st.session_state.year)
         st.session_state.participants_df = df
         st.success(f"✅ Current season: {len(df)} participants loaded")
+        save_current_state()
 
         # Summary
         col1, col2, col3 = st.columns(3)
@@ -493,9 +540,17 @@ def page_upload():
         combined_stats = pd.concat(all_stats, ignore_index=True)
         player_stats = calculate_player_stats(combined_stats)
         elo_df = calculate_elo_ratings(player_stats)
+        # Merge player names from stats data if available
+        if "First Name" not in elo_df.columns:
+            name_cols = [c for c in ["Profile ID", "First Name", "Last Name"] if c in combined_stats.columns]
+            if len(name_cols) == 3:
+                names = combined_stats[name_cols].drop_duplicates(subset=["Profile ID"])
+                elo_df = elo_df.merge(names, on="Profile ID", how="left")
         st.session_state.player_stats = elo_df
         st.success(f"✅ Loaded {len(stats_files)} stats file(s) — ELO calculated for {len(elo_df)} players")
-        st.dataframe(elo_df[["Profile ID", "First Name", "Last Name", "Current ELO", "Assessment"]].head(20) if "Assessment" in elo_df.columns else elo_df.head(20), use_container_width=True)
+        display_cols = [c for c in ["Profile ID", "First Name", "Last Name", "Current ELO", "Assessment"] if c in elo_df.columns]
+        st.dataframe(elo_df[display_cols].head(20) if display_cols else elo_df.head(20), use_container_width=True)
+        save_current_state()
     elif st.session_state.get("player_stats") is not None:
         st.info(f"ℹ️ Stats loaded for {len(st.session_state.player_stats)} players")
 

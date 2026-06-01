@@ -149,9 +149,11 @@ def get_players_by_group(df: pd.DataFrame, gender: str, age_group: str) -> pd.Da
 
 
 def save_state(state: dict, filepath: str = SAVE_FILE):
-    """Save application state to JSON."""
+    """Save application state to JSON, including DataFrames as CSV strings."""
 
     def convert(obj):
+        if isinstance(obj, pd.DataFrame):
+            return {"__dataframe__": True, "csv": obj.to_csv(index=False)}
         if isinstance(obj, (datetime, date)):
             return obj.isoformat()
         if isinstance(obj, pd.Timestamp):
@@ -163,10 +165,16 @@ def save_state(state: dict, filepath: str = SAVE_FILE):
 
 
 def load_state(filepath: str = SAVE_FILE) -> dict:
-    """Load application state from JSON."""
+    """Load application state from JSON, restoring DataFrames from CSV strings."""
     if os.path.exists(filepath):
         with open(filepath, "r") as f:
-            return json.load(f)
+            state = json.load(f)
+        # Restore DataFrames
+        for key, val in state.items():
+            if isinstance(val, dict) and val.get("__dataframe__"):
+                import io
+                state[key] = pd.read_csv(io.StringIO(val["csv"]))
+        return state
     return {}
 
 
