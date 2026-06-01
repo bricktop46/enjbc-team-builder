@@ -656,17 +656,14 @@ def page_team_builder():
         if play_up_into:
             play_up_df = pd.DataFrame(play_up_into)
             reset_players = pd.concat([reset_players, play_up_df], ignore_index=True)
-        reset_players = reset_players.drop_duplicates(subset=[COL_PROFILE_ID], keep="first")
-        for _, p in reset_players.iterrows():
+        reset_players = reset_players.drop_duplicates(subset=[COL_PROFILE_ID], keep="first").reset_index(drop=True)
+        for idx, p in reset_players.iterrows():
             pid = str(p[COL_PROFILE_ID])
             st.session_state.team_assignments[pid] = "Unassigned"
+            # Force the widget to show "Unassigned" on rerun
+            widget_key = f"assign_{gender}_{age_group}_{idx}_{pid}"
+            st.session_state[widget_key] = "Unassigned"
         save_current_state()
-
-        # Clear stale widget keys so selectboxes re-render with new values
-        keys_to_clear = [k for k in st.session_state if k.startswith(f"assign_{gender}_{age_group}_")]
-        for k in keys_to_clear:
-            del st.session_state[k]
-
         st.rerun()
 
     if auto_draft and num_teams > 0:
@@ -745,20 +742,20 @@ def page_team_builder():
             team_remap[old_team] = new_team_name
 
         # Step 5: Write assignments to session state with ranked team names
+        # Also build a pid->index map matching display order for widget keys
+        draft_pid_order = {str(p[COL_PROFILE_ID]): idx for idx, p in draft_players.iterrows()}
         for old_team_name, roster in team_rosters.items():
             new_team_name = team_remap[old_team_name]
             for pid, _ in roster:
                 st.session_state.team_assignments[pid] = new_team_name
+                # Force the widget to show the new team on rerun
+                idx = draft_pid_order.get(pid, 0)
+                widget_key = f"assign_{gender}_{age_group}_{idx}_{pid}"
+                st.session_state[widget_key] = new_team_name
 
         # Summary
         kept_together = sum(len(g) for _, g in sorted_groups if len(g) > 1)
         save_current_state()
-
-        # Clear stale widget keys so selectboxes re-render with new values
-        keys_to_clear = [k for k in st.session_state if k.startswith(f"assign_{gender}_{age_group}_")]
-        for k in keys_to_clear:
-            del st.session_state[k]
-
         st.rerun()
 
     # Player table
@@ -826,11 +823,7 @@ def page_team_builder():
         with col2:
             current = st.session_state.team_assignments.get(pid, "Unassigned")
             current_idx = team_options.index(current) if current in team_options else 0
-            # Sync widget state with our source of truth before rendering
             widget_key = f"assign_{key_suffix}"
-            if widget_key in st.session_state and st.session_state[widget_key] != current:
-                # Our source of truth was updated (e.g. by auto-draft) — push to widget
-                st.session_state[widget_key] = current
             assignment = st.selectbox(
                 "Team", team_options, index=current_idx,
                 key=widget_key, label_visibility="collapsed"
