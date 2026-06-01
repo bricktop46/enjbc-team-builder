@@ -1010,16 +1010,35 @@ def page_player_stats():
         st.warning("No grade statistics files found. Please upload them on the Upload Data page.")
         return
 
-    with st.spinner("Calculating player statistics..."):
-        raw_stats = load_all_stats(stats_files)
-        player_stats = calculate_player_stats(raw_stats)
-        player_stats = calculate_team_rank(player_stats)
-        elo_df = calculate_elo_ratings(player_stats)
+    # Use session state stats if no files on disk
+    if not stats_files and st.session_state.get("player_stats") is not None:
+        elo_df = st.session_state.player_stats
+        st.success(f"✅ Using uploaded stats | {len(elo_df)} players rated")
+        # We don't have raw player_stats for the full analysis tabs — show what we can
+        player_stats = None
+    else:
+        with st.spinner("Calculating player statistics..."):
+            raw_stats = load_all_stats(stats_files)
+            player_stats = calculate_player_stats(raw_stats)
+            player_stats = calculate_team_rank(player_stats)
+            elo_df = calculate_elo_ratings(player_stats)
 
-    st.success(f"✅ Loaded {len(stats_files)} seasons | {len(elo_df)} players rated")
+        st.success(f"✅ Loaded {len(stats_files)} seasons | {len(elo_df)} players rated")
 
     # Tabs for different views
     tab1, tab2, tab3 = st.tabs(["🏆 ELO Rankings", "👤 Player Lookup", "📈 Grading Analysis"])
+
+    if player_stats is None:
+        # Limited view — only show ELO table from uploaded data
+        with tab1:
+            st.subheader("Player ELO Rankings")
+            display_cols = [c for c in ["Profile ID", "First Name", "Last Name", "Current ELO", "Assessment"] if c in elo_df.columns]
+            st.dataframe(elo_df[display_cols].sort_values("Current ELO", ascending=False) if "Current ELO" in elo_df.columns else elo_df, use_container_width=True, hide_index=True)
+        with tab2:
+            st.info("Upload grade statistics CSV files on disk for full player lookup.")
+        with tab3:
+            st.info("Upload grade statistics CSV files on disk for grading analysis.")
+        return
 
     with tab1:
         st.subheader("Player ELO Rankings")
