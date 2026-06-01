@@ -282,6 +282,7 @@ def save_current_state():
         "birth_cert_sighted": st.session_state.birth_cert_sighted,
         "participants_df": st.session_state.participants_df,
         "player_stats": st.session_state.get("player_stats"),
+        "raw_stats": st.session_state.get("raw_stats"),
         "previous_teams": st.session_state.get("previous_teams", {}),
     }
     save_state(state)
@@ -547,6 +548,7 @@ def page_upload():
                 names = combined_stats[name_cols].drop_duplicates(subset=["Profile ID"])
                 elo_df = elo_df.merge(names, on="Profile ID", how="left")
         st.session_state.player_stats = elo_df
+        st.session_state.raw_stats = combined_stats
         st.success(f"✅ Loaded {len(stats_files)} stats file(s) — ELO calculated for {len(elo_df)} players")
         display_cols = [c for c in ["Profile ID", "First Name", "Last Name", "Current ELO", "Assessment"] if c in elo_df.columns]
         st.dataframe(elo_df[display_cols].head(20) if display_cols else elo_df.head(20), use_container_width=True)
@@ -1010,12 +1012,19 @@ def page_player_stats():
         st.warning("No grade statistics files found. Please upload them on the Upload Data page.")
         return
 
-    # Use session state stats if no files on disk
-    if not stats_files and st.session_state.get("player_stats") is not None:
-        elo_df = st.session_state.player_stats
+    # Use session state raw stats if no files on disk
+    if not stats_files and st.session_state.get("raw_stats") is not None:
+        with st.spinner("Calculating player statistics..."):
+            raw_stats = st.session_state.raw_stats
+            player_stats = calculate_player_stats(raw_stats)
+            player_stats = calculate_team_rank(player_stats)
+            elo_df = calculate_elo_ratings(player_stats)
         st.success(f"✅ Using uploaded stats | {len(elo_df)} players rated")
-        # We don't have raw player_stats for the full analysis tabs — show what we can
+    elif not stats_files:
+        # Only have the ELO summary, no raw data for full analysis
+        elo_df = st.session_state.player_stats
         player_stats = None
+        st.success(f"✅ Using uploaded stats | {len(elo_df)} players rated")
     else:
         with st.spinner("Calculating player statistics..."):
             raw_stats = load_all_stats(stats_files)
