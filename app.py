@@ -660,6 +660,7 @@ def page_team_builder():
         for _, p in reset_players.iterrows():
             pid = str(p[COL_PROFILE_ID])
             st.session_state.team_assignments[pid] = "Unassigned"
+        save_current_state()
         st.success(f"🔄 Reset {len(reset_players)} players to Unassigned")
         st.rerun()
 
@@ -746,6 +747,7 @@ def page_team_builder():
 
         # Summary
         kept_together = sum(len(g) for _, g in sorted_groups if len(g) > 1)
+        save_current_state()
         st.success(
             f"✅ Auto-drafted {len(draft_players)} players across {num_teams} teams\n\n"
             f"• {kept_together} players kept with previous teammates\n"
@@ -791,7 +793,7 @@ def page_team_builder():
         has_request = pd.notna(requests_text) and str(requests_text).strip()
         has_feedback = pd.notna(feedback_text) and str(feedback_text).strip()
         if has_request:
-            flags.append("�")
+            flags.append(" ")
         if has_feedback:
             flags.append("💬")
         coaching = player.get(COL_COACHING_INTEREST, "")
@@ -819,9 +821,14 @@ def page_team_builder():
         with col2:
             current = st.session_state.team_assignments.get(pid, "Unassigned")
             current_idx = team_options.index(current) if current in team_options else 0
+            # Sync widget state with our source of truth before rendering
+            widget_key = f"assign_{key_suffix}"
+            if widget_key in st.session_state and st.session_state[widget_key] != current:
+                # Our source of truth was updated (e.g. by auto-draft) — push to widget
+                st.session_state[widget_key] = current
             assignment = st.selectbox(
                 "Team", team_options, index=current_idx,
-                key=f"assign_{key_suffix}", label_visibility="collapsed"
+                key=widget_key, label_visibility="collapsed"
             )
             st.session_state.team_assignments[pid] = assignment
         with col3:
