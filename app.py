@@ -661,7 +661,12 @@ def page_team_builder():
             pid = str(p[COL_PROFILE_ID])
             st.session_state.team_assignments[pid] = "Unassigned"
         save_current_state()
-        st.success(f"🔄 Reset {len(reset_players)} players to Unassigned")
+
+        # Clear stale widget keys so selectboxes re-render with new values
+        keys_to_clear = [k for k in st.session_state if k.startswith(f"assign_{gender}_{age_group}_")]
+        for k in keys_to_clear:
+            del st.session_state[k]
+
         st.rerun()
 
     if auto_draft and num_teams > 0:
@@ -748,12 +753,12 @@ def page_team_builder():
         # Summary
         kept_together = sum(len(g) for _, g in sorted_groups if len(g) > 1)
         save_current_state()
-        st.success(
-            f"✅ Auto-drafted {len(draft_players)} players across {num_teams} teams\n\n"
-            f"• {kept_together} players kept with previous teammates\n"
-            f"• {len(no_prev_team)} new/unmatched players distributed by ELO\n"
-            f"• Teams ranked by strength: .1 = strongest, .{num_teams} = weakest"
-        )
+
+        # Clear stale widget keys so selectboxes re-render with new values
+        keys_to_clear = [k for k in st.session_state if k.startswith(f"assign_{gender}_{age_group}_")]
+        for k in keys_to_clear:
+            del st.session_state[k]
+
         st.rerun()
 
     # Player table
