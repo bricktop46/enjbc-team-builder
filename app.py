@@ -638,7 +638,21 @@ def page_team_builder():
     # Build team options
     prefix = GENDER_PREFIX.get(gender, "X")
     age_num = age_group.replace("U", "").replace("Over 18", "18+")
-    num_teams = st.number_input("Number of teams", min_value=1, max_value=15, value=suggested_teams, key=f"num_teams_{gender}_{age_group}")
+
+    # Calculate minimum teams needed based on existing assignments for this group
+    team_prefix_pattern = f"{prefix}{age_num}."
+    existing_team_nums = []
+    for _pid, _team_name in st.session_state.team_assignments.items():
+        if _team_name.startswith(team_prefix_pattern):
+            try:
+                _num = int(_team_name.split(".")[-1])
+                existing_team_nums.append(_num)
+            except (ValueError, IndexError):
+                pass
+    min_teams_needed = max(existing_team_nums) if existing_team_nums else 0
+    default_teams = max(suggested_teams, min_teams_needed)
+
+    num_teams = st.number_input("Number of teams", min_value=max(1, min_teams_needed), max_value=15, value=default_teams, key=f"num_teams_{gender}_{age_group}")
 
     team_options = ["Unassigned"] + [f"{prefix}{age_num}.{i}" for i in range(1, num_teams + 1)]
 
@@ -797,7 +811,7 @@ def page_team_builder():
         has_request = pd.notna(requests_text) and str(requests_text).strip()
         has_feedback = pd.notna(feedback_text) and str(feedback_text).strip()
         if has_request:
-            flags.append(" ")
+            flags.append("�")
         if has_feedback:
             flags.append("💬")
         coaching = player.get(COL_COACHING_INTEREST, "")
